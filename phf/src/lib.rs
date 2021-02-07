@@ -89,6 +89,32 @@ pub use phf_macros:: phf_map;
 #[::proc_macro_hack::proc_macro_hack]
 pub use phf_macros::phf_set;
 
+#[cfg(feature = "macros")]
+/// Macro to create a `static` (compile-time) match.
+///
+/// Requires the `"macros"` feature.
+///
+/// # Example
+///
+/// ```rust,edition2018
+/// use ::phf::phf_match;
+///
+/// static MY_SET: Set<&'static str> = phf_set! {
+/// };
+///
+/// fn main ()
+/// {
+///     let r = phf_match!{
+///         "hello world" => 1,
+///         "hola mundo" => 2,
+///          _ => 3
+///     }("hi");
+///     assert_eq!(r, 3);
+/// }
+/// ```
+#[::proc_macro_hack::proc_macro_hack]
+pub use phf_macros::phf_match;
+
 use core::ops::Deref;
 
 pub use phf_shared::PhfHash;

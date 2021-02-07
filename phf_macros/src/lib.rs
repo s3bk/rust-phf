@@ -196,6 +196,23 @@ impl Parse for Set {
     }
 }
 
+struct Match(Vec<Entry>, Expr);
+impl Parse for Match {
+    fn parse(input: ParseStream) -> parse::Result<Match> {
+        let mut map = vec![];
+        while !input.peek(Token![_]) {
+            let entry: Entry = input.parse()?;
+            input.parse::<Token![,]>()?;
+            map.push(entry);
+        }
+        input.parse::<Token![_]>()?;
+        input.parse::<Token![=>]>()?;
+        let catch: Expr = input.parse()?;
+        check_duplicates(&map)?;
+        Ok(Match(map, catch))
+    }
+}
+
 fn check_duplicates(entries: &[Entry]) -> parse::Result<()> {
     let mut keys = HashSet::new();
     for entry in entries {
@@ -224,6 +241,45 @@ fn build_map(entries: &[Entry], state: HashState) -> proc_macro2::TokenStream {
     }
 }
 
+fn build_match(entries: &[Entry], catch: &Expr, state: HashState) -> proc_macro2::TokenStream {
+    let len = entries.len();
+    let key = state.key;
+    let disps = state.disps.iter().map(|&(d1, d2)| quote!((#d1, #d2)));
+    let keys = state.map.iter().map(|&idx| {
+        let key = &entries[idx].key.expr;
+        quote!(#key)
+    });
+    let entries = state.map.iter().enumerate().map(|(i, &idx)| {
+        let value = &entries[idx].value;
+        let i = i as u32;
+        quote!(#i => #value)
+    });
+
+    if len == 0 {
+        quote! {
+            || { #catch }
+        }
+    } else {
+        quote! {
+            |key| {
+                static DISPS: &[(u32, u32)] = &[#(#disps),*];
+                const KEY: u64 = #key;
+                let keys = [#(#keys),*];
+                let hashes = phf_shared::hash(key, &KEY);
+                let index = phf_shared::get_index(&hashes, DISPS, #len);
+                if keys[index as usize] == key {
+                    match index {
+                        #(#entries,)*
+                        _ => unreachable!()
+                    }
+                } else {
+                    #catch
+                }
+            }
+        }
+    }
+}
+
 #[::proc_macro_hack::proc_macro_hack]
 pub fn phf_map(input: TokenStream) -> TokenStream {
     let map = parse_macro_input!(input as Map);
@@ -240,3 +296,13 @@ pub fn phf_set(input: TokenStream) -> TokenStream {
     let map = build_map(&set.0, state);
     quote!(phf::Set { map: #map }).into()
 }
+
+#[::proc_macro_hack::proc_macro_hack]
+pub fn phf_match(input: TokenStream) -> TokenStream {
+    let map = parse_macro_input!(input as Match);
+    let state = phf_generator::generate_hash(&map.0);
+
+    build_match(&map.0, &map.1, state).into()
+}
+
+
